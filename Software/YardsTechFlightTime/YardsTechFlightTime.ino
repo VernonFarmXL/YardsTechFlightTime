@@ -54,6 +54,15 @@ int TagReadFlagCount = 0;
 // SENSOR INSTANCE
 LD2450 ld2450;
 
+#define TARGET_ROWS 20
+#define NUM_TARGETS 3
+
+LD2450::RadarTarget targetArray[TARGET_ROWS][NUM_TARGETS];
+uint8_t targetIdx [NUM_TARGETS];
+bool targetMoving [NUM_TARGETS];
+uint16_t maxTargetDistance = 2000; // in mm i.e. 2m
+uint16_t minTargetSpeed = 10; //10cm/s
+
 
  
 //=======================================================================
@@ -452,7 +461,7 @@ void StartExternalPoweredOnTasks (){
 //                    Main Program Loop
 //=======================================================================
 void loop() {
-  Serial.println("Started panel reader code");
+  Serial.println("Started flight time code");
 
   while(1)
   {
@@ -472,22 +481,38 @@ void loop() {
         TARGET ID=2 X=-1078mm, Y=1370mm, SPEED=0cm/s, RESOLUTION=360mm, DISTANCE=1743mm, VALID=1
         TARGET ID=3 X=0mm, Y=0mm, SPEED=0cm/s, RESOLUTION=0mm, DISTANCE=0mm, VALID=0
         */
-        Serial.print(ld2450.getLastTargetMessage());
+        //Serial.print(ld2450.getLastTargetMessage());
 
 
         // GET THE DETECTED TARGETS
         // TARGET RANGE CAN BE FROM 0 TO ld2450.getSensorSupportedTargetCount(), DEPENDS ON SENSOR HARDWARE. REFER TO LD2450 DATASHEET
-        for (int i = 0; i < ld2450.getSensorSupportedTargetCount(); i++)
+        for (int i = 0; i < NUM_TARGETS; i++)
         {
           const LD2450::RadarTarget result_target = ld2450.getTarget(i);
-          //CHECK IF THE TARGET IS MOVING
-          // SEE LD2450.h RadarTarget FOR ALL POSSIBLE TARGET DATA SUCH AS X, Y POSITION, DISTANCE,...
-          if (result_target.valid && abs(result_target.speed) > 0) // SENSOR SUPPORTS NEGATIVE SPEED IF MOVING TOWARDS SENSOR
-          {
-            Serial.println("TARGET DETECTED");
+
+          //check if target has finished moving
+          if (targetMoving[i] && ((abs(result_target.speed) == 0) || abs(result_target.distance) > maxTargetDistance)) {
+            targetMoving[i] = false;
+            targetArray [targetIdx[i]][i] = result_target;
+            //report speed details
+            log_i("Target Detected %d in %d steps", i, targetIdx[i] + 1);
+            for (int j = 0; j <= targetIdx[i]; j++) {
+              log_i("%d X=%dmm, Y=%dmm, S=%dcm/s, D=%dmm, R=%dmm", 
+                j,
+                targetArray[j][i].x,
+                targetArray[j][i].y,
+                targetArray[j][i].speed,
+                targetArray[j][i].distance,
+                targetArray[j][i].resolution
+                );
+            }
+            targetIdx[i] = 0;
           }
-          else
-          {
+          //has target started moving
+          else if (!targetMoving[i] && (abs(result_target.speed) > minTargetSpeed) && abs(result_target.distance) <= maxTargetDistance) {
+            targetMoving[i] = true;
+            targetArray [targetIdx[i]][i] = result_target;
+            targetIdx[i] = targetIdx[i] + 1;
           }
         }
       };

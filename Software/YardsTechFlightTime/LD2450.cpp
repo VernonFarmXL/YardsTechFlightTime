@@ -109,7 +109,6 @@ int LD2450::read()
         // IF WE GOT DATA PARSE THEM
         if (len > 0)
         {
-          log_i ("LD got data");
           return LD2450::ProcessSerialDataIntoRadarData(rec_buf, len);
         }
     }
