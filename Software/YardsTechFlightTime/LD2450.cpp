@@ -133,6 +133,7 @@ LD2450::RadarTarget LD2450::getTarget(uint16_t _target_id){
 }
 int LD2450::ProcessSerialDataIntoRadarData(byte rec_buf[], int len)
 {
+  //unsigned long startTime = millis();
     int redreshed_targets = 0;
 
     for (int i = 0; i < len; i++)
@@ -217,6 +218,7 @@ int LD2450::ProcessSerialDataIntoRadarData(byte rec_buf[], int len)
             i = index; // Updating the index of an external loop
         }
     }
+    //log_i ("%d", millis()-startTime);
     return redreshed_targets;
 }
 

@@ -54,14 +54,16 @@ int TagReadFlagCount = 0;
 // SENSOR INSTANCE
 LD2450 ld2450;
 
-#define TARGET_ROWS 20
+#define TARGET_ROWS 50
 #define NUM_TARGETS 3
 
 LD2450::RadarTarget targetArray[TARGET_ROWS][NUM_TARGETS];
+unsigned long targetArrayTimes[TARGET_ROWS][NUM_TARGETS];
 uint8_t targetIdx [NUM_TARGETS];
-bool targetMoving [NUM_TARGETS];
+unsigned long targetMoving [NUM_TARGETS];
 uint16_t maxTargetDistance = 2000; // in mm i.e. 2m
 uint16_t minTargetSpeed = 10; //10cm/s
+uint16_t noActivityTimeout = 6000; // 6 seconds
 
 
  
@@ -197,16 +199,16 @@ void setup() {
   
     if (!SafeMode) {
     }
-    log_i("Command setup");
-    CommandsSetup ();
-    log_i("Wifi setup");
-    WifiSetup ();
+    // log_i("Command setup");
+    // CommandsSetup ();
+    // log_i("Wifi setup");
+    // WifiSetup ();
 
     if (!SafeMode) {
-      log_i("BT Master setup");
-      SetupBTMaster (false);
-      log_i("BT Client setup");
-      SetupBTClient ();
+      // log_i("BT Master setup");
+      // SetupBTMaster (false);
+      // log_i("BT Client setup");
+      // SetupBTClient ();
       log_i("Starting Tasks");
       StartNormalTasks();
     }
@@ -429,15 +431,105 @@ void StartBTCommsLEDTask (){
 }
 
 
+void LD2450Task(void * parameter) {  
+  while (!OTAUpdating && !ExternalPoweredOn && !PoweringDown) {
+    vTaskDelay(pdMS_TO_TICKS(1));
+    // READ FUNCTION MUST BE CALLED IN LOOP TO READ THE INCOMMING DATA STREAM
+    // RETURNS -1 or -2 as error flag and 0 to getSensorSupportedTargetCount() if valid targets found
+    const int sensor_got_valid_targets = ld2450.read();
+    if (sensor_got_valid_targets > 0)
+    {
+      unsigned long startTime = millis();
+
+      /*
+      PRINT DEBUG DATA STREAM LIKE THIS: 
+      TARGET ID=1 X=-19mm, Y=496mm, SPEED=0cm/s, RESOLUTION=360mm, DISTANCE=496mm, VALID=1
+      TARGET ID=2 X=-1078mm, Y=1370mm, SPEED=0cm/s, RESOLUTION=360mm, DISTANCE=1743mm, VALID=1
+      TARGET ID=3 X=0mm, Y=0mm, SPEED=0cm/s, RESOLUTION=0mm, DISTANCE=0mm, VALID=0
+      */
+      //Serial.print(ld2450.getLastTargetMessage());
+
+
+      // GET THE DETECTED TARGETS
+      // TARGET RANGE CAN BE FROM 0 TO ld2450.getSensorSupportedTargetCount(), DEPENDS ON SENSOR HARDWARE. REFER TO LD2450 DATASHEET
+      for (int i = 0; i < NUM_TARGETS; i++)
+      {
+        const LD2450::RadarTarget result_target = ld2450.getTarget(i);
+
+        //check if target has finished moving
+        if (targetMoving[i] && ((abs(result_target.speed) == 0) || abs(result_target.distance) > maxTargetDistance)) {
+          targetArray [targetIdx[i]][i] = result_target;
+          targetArrayTimes [targetIdx[i]][i] = millis();
+          //report speed details
+          log_i("Target Detected %d in %d steps", i, targetIdx[i] + 1);
+          for (int j = 0; j <= targetIdx[i]; j++) {
+            log_i("%d %dms X=%dmm, Y=%dmm, S=%dcm/s, D=%dmm, R=%dmm", 
+              j,
+              targetArrayTimes[j][i] - targetMoving[i],
+              targetArray[j][i].x,
+              targetArray[j][i].y,
+              targetArray[j][i].speed,
+              targetArray[j][i].distance,
+              targetArray[j][i].resolution
+              );
+          }
+          targetMoving[i] = 0;
+          targetIdx[i] = 0;
+        }
+        else if (targetMoving[i]) {
+          if ((millis() - targetMoving[i] > noActivityTimeout) 
+            || (abs(result_target.speed) == 0)){
+            targetIdx[i] = 0;
+            targetMoving[i] = 0;
+          }
+          else {
+            targetArray [targetIdx[i]][i] = result_target;
+            targetArrayTimes [targetIdx[i]][i] = millis();
+            targetIdx[i] = targetIdx[i] + 1;
+          }
+        }
+        //has target started moving
+        else if (!targetMoving[i] && (abs(result_target.speed) > minTargetSpeed) && abs(result_target.distance) <= maxTargetDistance) {
+          targetArray [targetIdx[i]][i] = result_target;
+          targetMoving[i] = millis();
+          targetArrayTimes [targetIdx[i]][i] = targetMoving[i];
+          targetIdx[i] = targetIdx[i] + 1;
+        }
+      }
+
+      //log_i ("%dms", millis() - startTime);
+    };
+  }
+  log_i("LD2450 Task stopped!");
+  vTaskDelete (NULL);
+}
+
+
+
+
+
+void StartLD2450Task (){
+  xTaskCreate(
+                  LD2450Task,          /* Task function. */
+                  "LD2450Task",        /* String with name of task. */
+                  10000,            /* Stack size in bytes. */
+                  NULL,             /* Parameter passed as input of the task */
+                  HIGHEST_PRI,               /* Priority of the task. */
+                  NULL           /* Task handle. */
+                  );            
+}
+
+
 
 void StartNormalTasks (){
   StartActivityLEDTask ();
   StartBuzzTask ();
-  StartWifiLoopTask ();
+  //StartWifiLoopTask ();
   StartBatteryTask();
-  StartCommandsTask ();
-  StartBTMasterTask ();
-  StartBTCommsLEDTask ();
+  //StartCommandsTask ();
+  //StartBTMasterTask ();
+  //StartBTCommsLEDTask ();
+  StartLD2450Task();
 }
 
 
@@ -466,57 +558,9 @@ void loop() {
   while(1)
   {
     if (!OTAUpdating && !ExternalPoweredOn && !PoweringDown && !SafeMode) {
-      BTClientLoop ();
-
-
-      // READ FUNCTION MUST BE CALLED IN LOOP TO READ THE INCOMMING DATA STREAM
-      // RETURNS -1 or -2 as error flag and 0 to getSensorSupportedTargetCount() if valid targets found
-      const int sensor_got_valid_targets = ld2450.read();
-      if (sensor_got_valid_targets > 0)
-      {
-
-        /*
-        PRINT DEBUG DATA STREAM LIKE THIS: 
-        TARGET ID=1 X=-19mm, Y=496mm, SPEED=0cm/s, RESOLUTION=360mm, DISTANCE=496mm, VALID=1
-        TARGET ID=2 X=-1078mm, Y=1370mm, SPEED=0cm/s, RESOLUTION=360mm, DISTANCE=1743mm, VALID=1
-        TARGET ID=3 X=0mm, Y=0mm, SPEED=0cm/s, RESOLUTION=0mm, DISTANCE=0mm, VALID=0
-        */
-        //Serial.print(ld2450.getLastTargetMessage());
-
-
-        // GET THE DETECTED TARGETS
-        // TARGET RANGE CAN BE FROM 0 TO ld2450.getSensorSupportedTargetCount(), DEPENDS ON SENSOR HARDWARE. REFER TO LD2450 DATASHEET
-        for (int i = 0; i < NUM_TARGETS; i++)
-        {
-          const LD2450::RadarTarget result_target = ld2450.getTarget(i);
-
-          //check if target has finished moving
-          if (targetMoving[i] && ((abs(result_target.speed) == 0) || abs(result_target.distance) > maxTargetDistance)) {
-            targetMoving[i] = false;
-            targetArray [targetIdx[i]][i] = result_target;
-            //report speed details
-            log_i("Target Detected %d in %d steps", i, targetIdx[i] + 1);
-            for (int j = 0; j <= targetIdx[i]; j++) {
-              log_i("%d X=%dmm, Y=%dmm, S=%dcm/s, D=%dmm, R=%dmm", 
-                j,
-                targetArray[j][i].x,
-                targetArray[j][i].y,
-                targetArray[j][i].speed,
-                targetArray[j][i].distance,
-                targetArray[j][i].resolution
-                );
-            }
-            targetIdx[i] = 0;
-          }
-          //has target started moving
-          else if (!targetMoving[i] && (abs(result_target.speed) > minTargetSpeed) && abs(result_target.distance) <= maxTargetDistance) {
-            targetMoving[i] = true;
-            targetArray [targetIdx[i]][i] = result_target;
-            targetIdx[i] = targetIdx[i] + 1;
-          }
-        }
-      };
+      //BTClientLoop ();
     }
+
     
     PowerButtonLoop();
     CheckForExternalPower ();
