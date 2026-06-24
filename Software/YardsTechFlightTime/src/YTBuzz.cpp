@@ -27,7 +27,7 @@ void BuzzOff () {
     ledcWrite(BuzzerChannel, 0);
   #endif
   #ifdef BUZZ_DEBUG
-    log_i("Buzzer OFF buzztime=%d, buzzcount=%d, quiettime=%d", BuzzTime, BuzzCount, QuietTime);
+    log_fxl("Buzzer OFF buzztime=%d, buzzcount=%d, quiettime=%d", BuzzTime, BuzzCount, QuietTime);
   #endif
 }
 
@@ -53,7 +53,7 @@ void BuzzOn (int _BuzzTime, int _BuzzCount, int _QuietTime, bool _notaTag) {//_o
 
     BuzzerOn = true;
     #ifdef BUZZ_DEBUG
-      log_i("Buzzer ON buzztime=%d, buzzcount=%d, quiettime=%d", BuzzTime, BuzzCount, QuietTime);
+      log_fxl("Buzzer ON buzztime=%d, buzzcount=%d, quiettime=%d", BuzzTime, BuzzCount, QuietTime);
     #endif
   }
 }
@@ -76,7 +76,7 @@ void BuzzWait () {
 
 void BuzzSetup (void) {
   #ifdef BUZZ_DEBUG
-  log_i ("**** BUZZ DEBUG ON ******");
+  log_fxl ("**** BUZZ DEBUG ON ******");
   #endif
     
   pinMode(BUZZER_PIN,OUTPUT);
@@ -87,7 +87,7 @@ void BuzzSetup (void) {
     float frq = ledcSetup(BuzzerChannel, BuzzerFreq, BuzzerResolution);
     ledcAttachPin(BUZZER_PIN, BuzzerChannel);
   #endif
-  log_i("Buzzer freq: %f", frq);
+  log_fxl("Buzzer freq: %f", frq);
   
   Settings.begin("Settings", false);  
   QuietMode = Settings.getBool(QuietEEAddr);
@@ -105,7 +105,7 @@ void BuzzTask(void * parameter) {
         unsigned long Now = millis();
         if ((BuzzCount % 2 == 0) && (Now - LastBuzzerOn > BuzzTime)) { //even buzzcount so must be buzz time
           #ifdef BUZZ_DEBUG
-            log_i("Buzzer on check buzztime=%d, buzzcount=%d, quiettime=%d", BuzzTime, BuzzCount, QuietTime);
+            log_fxl("Buzzer on check buzztime=%d, buzzcount=%d, quiettime=%d", BuzzTime, BuzzCount, QuietTime);
           #endif
           BuzzOff ();
           BuzzCount = BuzzCount - 1;
@@ -115,7 +115,7 @@ void BuzzTask(void * parameter) {
         }
         else if ((BuzzCount % 2 == 1) && (Now - LastBuzzerOn > QuietTime)) { //odd buzzcount so must be quiet time
           #ifdef BUZZ_DEBUG
-            log_i("Buzzer quiet check buzztime=%d, buzzcount=%d, quiettime=%d", BuzzTime, BuzzCount, QuietTime);
+            log_fxl("Buzzer quiet check buzztime=%d, buzzcount=%d, quiettime=%d", BuzzTime, BuzzCount, QuietTime);
           #endif
           BuzzCount = BuzzCount - 1;
           LastBuzzerOn = 0;
@@ -125,7 +125,7 @@ void BuzzTask(void * parameter) {
     }
   }
   BuzzOff();
-  log_i("Buzz Task stopped!");
+  log_fxl("Buzz Task stopped!");
   vTaskDelete (NULL);
 }
 

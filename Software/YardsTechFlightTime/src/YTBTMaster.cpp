@@ -26,7 +26,7 @@ uint8_t TestAddress[6]  = {0x00, 0x04, 0x3E, 0x94, 0xC7, 0x9B};
 
 void SetupBTMaster(bool Reconnect) {
   #ifdef BT_DEBUG
-  log_i ("**** BT DEBUG ON - MASTER ******");
+  log_fxl ("**** BT DEBUG ON - MASTER ******");
   #endif
   Settings.begin("Settings", false);  
   BTName = Settings.getString(BTNameEEAddr);
@@ -60,7 +60,7 @@ void SetupBTMaster(bool Reconnect) {
 
 //void BTMasterLoop(unsigned long Now) {
 void BTMasterLoop(void * parameter) {  
-  log_i("BTMasterTask Started");
+  log_fxl("BTMasterTask Started");
   while (!OTAUpdating && !ExternalPoweredOn && !PoweringDown && !SafeMode) {
     delay (BTMAST_LOOP_DELAY);
     unsigned long Now = millis();
@@ -80,7 +80,7 @@ void BTMasterLoop(void * parameter) {
         #else
           if ((Now - LastConnectTime > CurrentWaitTime)){
         #endif
-          log_i("Reconnecting to BT slave device. Wait time = %d, Time diff = %d", CurrentWaitTime, Now - LastConnectTime);
+          log_fxl("Reconnecting to BT slave device. Wait time = %d, Time diff = %d", CurrentWaitTime, Now - LastConnectTime);
           CurrentWaitTime = CurrentWaitTime + WAIT_TIME_INC; //slowly increase the wait time until we reach the max wait time;
           if (CurrentWaitTime > MAX_WAIT_TIME){
             CurrentWaitTime = MAX_WAIT_TIME;
@@ -93,7 +93,7 @@ void BTMasterLoop(void * parameter) {
               Serial.println (BTDeviceAddr); 
             #endif
                         
-            log_i("Looking to connect to name/address : %s / %s", BTDeviceName.c_str(), BTDeviceAddr.c_str());
+            log_fxl("Looking to connect to name/address : %s / %s", BTDeviceName.c_str(), BTDeviceAddr.c_str());
                      
             if (BTDeviceAddr.length() >= 17){
               esp_bd_addr_t Addr;
@@ -201,7 +201,7 @@ void BTMasterLoop(void * parameter) {
   
   }
 
-  log_i("BTMasterTask stopped!");
+  log_fxl("BTMasterTask stopped!");
   vTaskDelete (NULL);
 
 }

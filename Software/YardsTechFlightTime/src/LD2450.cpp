@@ -40,6 +40,10 @@ void LD2450::begin(HardwareSerial &radarStream, bool already_initialized)
     LD2450::radar_uart = &radarStream;
 
     LD2450::last_target_data = "";
+
+    radarStream.onReceiveError([this](hardwareSerial_error_t error) {
+        LD2450::handleUartError(error);
+    });
 }
 
 #ifdef ENABLE_SOFTWARESERIAL_SUPPORT
@@ -102,12 +106,22 @@ int LD2450::read()
     }
 
     if (LD2450::radar_uart->available())
-    {   
-        
-        byte rec_buf[LD2450_SERIAL_BUFFER] = "";
-        const int len = LD2450::radar_uart->readBytes(rec_buf, sizeof(rec_buf));
+    {
+
+        byte rec_buf[LD2450_SERIAL_BUFFER + LD2450_FRAME_SIZE] = "";
+
+        // Prepend any bytes left over from a frame that was split across the previous read
+        if (LD2450::pending_len > 0)
+        {
+            memcpy(rec_buf, LD2450::pending_buf, LD2450::pending_len);
+        }
+
+        const int new_len = LD2450::radar_uart->readBytes(rec_buf + LD2450::pending_len, LD2450_SERIAL_BUFFER);
+        const int len = LD2450::pending_len + new_len;
+        LD2450::pending_len = 0;
+
         // IF WE GOT DATA PARSE THEM
-        if (len > 0)
+        if (new_len > 0)
         {
           return LD2450::ProcessSerialDataIntoRadarData(rec_buf, len);
         }
@@ -131,15 +145,123 @@ LD2450::RadarTarget LD2450::getTarget(uint16_t _target_id){
     }
     return LD2450::radarTargets[_target_id];
 }
+
+void LD2450::pushTargetHistory(uint16_t _target_id, const RadarTarget_t &_target, unsigned long _time)
+{
+    std::lock_guard<std::mutex> guard(LD2450::targetHistoryMutex);
+
+    LD2450::targetHistorySeq[_target_id]++;
+
+    RadarTarget_t entry = _target;
+    entry.timestamp = _time;
+    entry.sequence = LD2450::targetHistorySeq[_target_id];
+
+    uint16_t head = LD2450::targetHistoryHead[_target_id];
+    LD2450::targetHistory[_target_id][head] = entry;
+    LD2450::targetHistoryTimes[_target_id][head] = _time;
+
+    LD2450::targetHistoryHead[_target_id] = (head + 1) % LD2450_TARGET_HISTORY_SIZE;
+    if (LD2450::targetHistoryCount[_target_id] < LD2450_TARGET_HISTORY_SIZE)
+    {
+        LD2450::targetHistoryCount[_target_id]++;
+    }
+}
+
+LD2450::RadarTarget LD2450::getTargetHistory(uint16_t _target_id, uint16_t _history_index)
+{
+    std::lock_guard<std::mutex> guard(LD2450::targetHistoryMutex);
+
+    if (_target_id >= LD2450_MAX_SENSOR_TARGETS || _history_index >= LD2450::targetHistoryCount[_target_id])
+    {
+        LD2450::RadarTarget tmp;
+        tmp.valid = false;
+        return tmp;
+    }
+
+    // _history_index 0 = most recently written entry
+    uint16_t head = LD2450::targetHistoryHead[_target_id];
+    uint16_t idx = (head + LD2450_TARGET_HISTORY_SIZE - 1 - _history_index) % LD2450_TARGET_HISTORY_SIZE;
+    return LD2450::targetHistory[_target_id][idx];
+}
+
+unsigned long LD2450::getTargetHistoryTime(uint16_t _target_id, uint16_t _history_index)
+{
+    std::lock_guard<std::mutex> guard(LD2450::targetHistoryMutex);
+
+    if (_target_id >= LD2450_MAX_SENSOR_TARGETS || _history_index >= LD2450::targetHistoryCount[_target_id])
+    {
+        return 0;
+    }
+
+    uint16_t head = LD2450::targetHistoryHead[_target_id];
+    uint16_t idx = (head + LD2450_TARGET_HISTORY_SIZE - 1 - _history_index) % LD2450_TARGET_HISTORY_SIZE;
+    return LD2450::targetHistoryTimes[_target_id][idx];
+}
+
+uint16_t LD2450::getTargetHistoryCount(uint16_t _target_id)
+{
+    std::lock_guard<std::mutex> guard(LD2450::targetHistoryMutex);
+
+    if (_target_id >= LD2450_MAX_SENSOR_TARGETS)
+    {
+        return 0;
+    }
+    return LD2450::targetHistoryCount[_target_id];
+}
+
+uint32_t LD2450::getTargetHistorySequence(uint16_t _target_id)
+{
+    std::lock_guard<std::mutex> guard(LD2450::targetHistoryMutex);
+
+    if (_target_id >= LD2450_MAX_SENSOR_TARGETS)
+    {
+        return 0;
+    }
+    return LD2450::targetHistorySeq[_target_id];
+}
+
+void LD2450::handleUartError(hardwareSerial_error_t error)
+{
+    if (error == UART_BUFFER_FULL_ERROR || error == UART_FIFO_OVF_ERROR)
+    {
+        LD2450::bufferOverflowed = true;
+        LD2450::bufferOverflowCount = LD2450::bufferOverflowCount + 1;
+    }
+}
+
+bool LD2450::hasBufferOverflowed()
+{
+    bool overflowed = LD2450::bufferOverflowed;
+    LD2450::bufferOverflowed = false;
+    return overflowed;
+}
+
+uint32_t LD2450::getBufferOverflowCount()
+{
+    return LD2450::bufferOverflowCount;
+}
+
 int LD2450::ProcessSerialDataIntoRadarData(byte rec_buf[], int len)
 {
   //unsigned long startTime = millis();
     int redreshed_targets = 0;
 
-    for (int i = 0; i < len; i++)
+    int i = 0;
+    for (; i < len; i++)
     {
+        if (rec_buf[i] != 0xAA)
+        {
+            continue;
+        }
+
+        // Not enough bytes yet for a full frame - keep them and wait for the rest on the next read
+        if (i + LD2450_FRAME_SIZE - 1 >= len)
+        {
+            break;
+        }
+
         // Checking the header and footer
-        if (rec_buf[i] == 0xAA && rec_buf[i + 1] == 0xFF && rec_buf[i + 2] == 0x03 && rec_buf[i + 3] == 0x00 && rec_buf[i + 28] == 0x55 && rec_buf[i + 29] == 0xCC)
+        if (rec_buf[i + 1] == 0xFF && rec_buf[i + 2] == 0x03 && rec_buf[i + 3] == 0x00 && rec_buf[i + 28] == 0x55 && rec_buf[i + 29] == 0xCC)
         {
 
             int index = i + 4; // Skip header and in-frame data length fields
@@ -187,7 +309,6 @@ int LD2450::ProcessSerialDataIntoRadarData(byte rec_buf[], int len)
                        target.valid = false;
                     }
 
-
                     LD2450::radarTargets[targetCounter].id = targetCounter + 1;
                     LD2450::radarTargets[targetCounter].x = target.x;
                     LD2450::radarTargets[targetCounter].y = target.y;
@@ -195,7 +316,9 @@ int LD2450::ProcessSerialDataIntoRadarData(byte rec_buf[], int len)
                     LD2450::radarTargets[targetCounter].resolution = target.resolution;
                     LD2450::radarTargets[targetCounter].valid = target.valid;
                     LD2450::radarTargets[targetCounter].distance = target.distance;
-                    
+
+                    LD2450::pushTargetHistory(targetCounter, LD2450::radarTargets[targetCounter], millis());
+
 
                     // Add target information to the string
                     LD2450::last_target_data += "TARGET ID=" + String(targetCounter + 1) + " X=" + String(target.x) + "mm, Y=" + String(target.y) + "mm, SPEED=" + String(target.speed) + "cm/s, RESOLUTION=" + String(target.resolution) + "mm, DISTANCE=" + String(target.distance) + "mm, VALID=" + String(target.valid) + "\n";
@@ -218,7 +341,14 @@ int LD2450::ProcessSerialDataIntoRadarData(byte rec_buf[], int len)
             i = index; // Updating the index of an external loop
         }
     }
-    //log_i ("%d", millis()-startTime);
+    // Stash any unconsumed bytes (start of a frame that hasn't fully arrived yet) for the next read
+    if (i < len)
+    {
+        LD2450::pending_len = len - i;
+        memcpy(LD2450::pending_buf, rec_buf + i, LD2450::pending_len);
+    }
+
+    //log_fxl ("%d", millis()-startTime);
     return redreshed_targets;
 }
 

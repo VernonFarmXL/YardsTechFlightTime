@@ -65,7 +65,7 @@ String GetWifiAllClientResponse(int ClientNo) {
 
 void CommandsSetup(void) {
 #ifdef CMD_DEBUG
-  log_i("**** COMMAND DEBUG ON ******");
+  log_fxl("**** COMMAND DEBUG ON ******");
 #endif
 
   Settings.begin("Settings", false);
@@ -143,7 +143,7 @@ void SendEIDToAllClients(unsigned long Now, String EID) {
   }
 
   if (sendEID) {
-    //log_i("EID changed from : %s : %s", LastEID.c_str(), EID.c_str());
+    //log_fxl("EID changed from : %s : %s", LastEID.c_str(), EID.c_str());
     LastEID = EID;
     LastEIDTime = Now;
 
@@ -175,9 +175,9 @@ bool TagCaptured(volatile byte RawData[], int TagType) {
 //   AvgCount = 0;
 
 //   if (TagType == HDX_TAG_TYPE) {
-//     log_i("HDX Tag ");
+//     log_fxl("HDX Tag ");
 //   } else {
-//     log_i("SCRAP Tag ");
+//     log_fxl("SCRAP Tag ");
 //   }
 //   int ManCode = (RawData[5] << 2) + (RawData[4] >> 6);
 //   uint64_t IDLow = (RawData[4] & 0b00111111);
@@ -195,9 +195,9 @@ bool TagCaptured(volatile byte RawData[], int TagType) {
 //     BuzzOn(BUZZ_TAG_READ, 1, 0, false);
 //     String TempEID = String(ManCode) + " " + uint64ToString(IDLow);
 // #ifdef MAIN_DEBUG
-//     log_i("%s", TempEID.c_str());
+//     log_fxl("%s", TempEID.c_str());
 //     if (LastEID != TempEID) {
-//       log_i("*********** EID has changed from %s ***********************", LastEID.c_str());
+//       log_fxl("*********** EID has changed from %s ***********************", LastEID.c_str());
 //     }
 // #endif
 //     bool returnResult = false;
@@ -240,7 +240,7 @@ String PerformCommand(const char* Cmd, unsigned long Now) {
     // if (TestEvent != CurrentEvent) {
     //   CurrentEvent = static_cast<WeightEvent>(Command.toInt());
     //   LastEventChange = Now;
-    //   log_i("Weight change event = %d", CurrentEvent);
+    //   log_fxl("Weight change event = %d", CurrentEvent);
     // }
     return String("");
   }
@@ -281,7 +281,7 @@ String PerformCommand(const char* Cmd, unsigned long Now) {
 
   else if (Command.startsWith("[BC")) {  //send barcode to all clients
     //Serial.println ("Barcode command received.");
-    log_i("Barcode command received.");
+    log_fxl("Barcode command received.");
     Command.remove(0, 3);  //remove the "{BC"
     int Index = Command.indexOf("]");
     if (Index > 0) {  //0 will be empty barcode string, so we only want > 0
@@ -311,10 +311,10 @@ String PerformCommand(const char* Cmd, unsigned long Now) {
     BattVoltOffset = Command.toFloat();
     Settings.begin("Settings", false);
     Settings.putFloat(BattVoltOffsetEEAddr, BattVoltOffset);
-    log_i("Batt volt offset set to %f", BattVoltOffset);
+    log_fxl("Batt volt offset set to %f", BattVoltOffset);
     BattVoltOffset = Settings.getFloat(BattVoltOffsetEEAddr);
     Settings.end();
-    log_i("Batt Voltage Offset = %f", BattVoltOffset);
+    log_fxl("Batt Voltage Offset = %f", BattVoltOffset);
     return String("{BATTOFF_OK}");
   }
 
@@ -333,10 +333,10 @@ String PerformCommand(const char* Cmd, unsigned long Now) {
   else if (Command.startsWith("{BT_DISCO_DONE}")) {
 #ifdef LOCAL_BT_IMPLMENTATION
     if (SerialBT.DiscoverDone()) {
-      log_i("BT discovery finished");
+      log_fxl("BT discovery finished");
       return String("{BT_DISCO_FINISHED}");
     } else {
-      log_i("BT discovery still running");
+      log_fxl("BT discovery still running");
       return String("{BT_DISCO_RUNNING}");
     }
 #endif
@@ -361,11 +361,11 @@ String PerformCommand(const char* Cmd, unsigned long Now) {
   }
 
   else if (Command.startsWith("U")) {
-    log_i("OTA Update command recieved.");
+    log_fxl("OTA Update command recieved.");
     //this assumes that there variables have been set already. They are set as parameters
     ExecuteOTA(OTAHost, OTAPort, OTAPath);
     OTAUpdating = false;
-    log_i("Exited OTA Update");
+    log_fxl("Exited OTA Update");
     return String("");
   }
 
@@ -411,7 +411,7 @@ String PerformCommand(const char* Cmd, unsigned long Now) {
       case 43: Result = Result + DefaultStaticSubnet; break;
       case 44: Result = Result + String(UseStaticIP); break;
     }
-    log_i("Return: %s", Result.c_str());
+    log_fxl("Return: %s", Result.c_str());
     return Result;
   }
 
@@ -424,14 +424,14 @@ String PerformCommand(const char* Cmd, unsigned long Now) {
       int TempConnectionType = Command.toInt();  //we don;t want to change connection type here as it will possibly drop the connection
       Settings.putInt(ConnectionTypeEEAddr, TempConnectionType);
       TempConnectionType = Settings.getInt(ConnectionTypeEEAddr);
-      log_i("ConnectionType set to %d", TempConnectionType);
+      log_fxl("ConnectionType set to %d", TempConnectionType);
     } else if (Param == "01") {  //protocol type
       Command.remove(0, 2);      //remove the first digit
       ProtocolType = Command.toInt();
       Settings.putInt(ProtocolTypeEEAddr, ProtocolType);
     } else if ((Param == "02") || (Param == "04") || (Param == "06") || (Param == "08")) {  //ssid
 #ifdef CMD_DEBUG
-      log_i("SSID command = %s", Command.c_str());
+      log_fxl("SSID command = %s", Command.c_str());
 #endif
       Command.remove(0, 2);  //remove the first digit
       int Num = Param.toInt();
@@ -616,14 +616,14 @@ void CommandsTask(void * parameter) {
       // Read the data
       char newChar = Serial.read();
   #ifdef CMD_DEBUG
-      log_i("Command char %c", newChar);
+      log_fxl("Command char %c", newChar);
   #endif
 
       // If we have the end of a string
       // (Using the test your code uses)
       if (newChar == '\r') {
   #ifdef CMD_DEBUG
-        log_i("Recieved data : %s", SerialDataIn);
+        log_fxl("Recieved data : %s", SerialDataIn);
   #endif
         Serial.write(PerformCommand(SerialDataIn, Now).c_str());
         // Empty the string for next time
@@ -647,7 +647,7 @@ void CommandsTask(void * parameter) {
       }
     }
   }
-  log_i("Commands Task stopped!");
+  log_fxl("Commands Task stopped!");
   vTaskDelete (NULL);
 }
 

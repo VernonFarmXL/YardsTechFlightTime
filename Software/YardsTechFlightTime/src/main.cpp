@@ -61,239 +61,126 @@ LD2450::RadarTarget targetArray[TARGET_ROWS][NUM_TARGETS];
 unsigned long targetArrayTimes[TARGET_ROWS][NUM_TARGETS];
 uint8_t targetIdx [NUM_TARGETS];
 unsigned long targetMoving [NUM_TARGETS];
-uint16_t maxTargetDistance = 2000; // in mm i.e. 2m
-uint16_t minTargetSpeed = 10; //10cm/s
+uint16_t maxTargetDistance = 5000; // in mm i.e. 5m
+uint16_t minTargetSpeed = 5; //5cm/s
 uint16_t noActivityTimeout = 6000; // 6 seconds
 
+//we need ...
+//starting distance or 0 for none. Don't accept time measurements greater than this distance
+//flight range or 0 for none. Flight range is the distance the animal must travel
 
- 
-//=======================================================================
-//                    Power on setup
-//=======================================================================
-void setup() {
-  PoweringDown = false;
-  
-  pinMode(COMMS_PIN, OUTPUT);     
-  pinMode(ACTIVITY_PIN, OUTPUT);
-  pinMode(POWER_BTN, INPUT);
-  pinMode(EXT_POWER_INPUT, INPUT);
-  pinMode(EXT_POWER_PIN, OUTPUT);
-  pinMode(POWER_ON_OUTPUT, OUTPUT);
 
-  //pinMode(READ_TAG_INPUT, INPUT);
 
-  Serial.begin(115200);
-  Serial2.begin(256000, SERIAL_8N1, RXD2, TXD2);
-  while (!Serial2) {
-
-  }
-  ld2450.begin(Serial2, true);
-   
-  #ifdef MAIN_DEBUG
-  log_i ("**** MAIN DEBUG ON ******");
-
-  if(!ld2450.waitForSensorMessage()){
-    log_i("SENSOR CONNECTION SEEMS OK");
-  }
-  else{
-    log_i("SENSOR TEST: GOT NO VALID SENSORDATA - PLEASE CHECK CONNECTION!");
-  }
-  #endif
-
-    
-  Settings.begin("Settings", false);  
-  DataModNo = Settings.getInt(DataModNoEEAddr);//Checks to see if this is the first time we have started and if we need to do a factor reset
-  log_i("Data mod no = %d", DataModNo);
-  Settings.end();  
-  
-  FactoryReset (DataModNo);
-  
-  Settings.begin("Settings", false);  
-  GUIDStr = Settings.getString(GUIDEEAddr);//loads guid from flash
-  SerialNo = Settings.getString(SerialNoEEAddr);//Get serial no from flash
-  ConnectionType = Settings.getInt(ConnectionTypeEEAddr);
-  CurrentConnectionType = ConnectionType;
-  log_i("Connection type = %d", ConnectionType);
-  if ((ConnectionType < CONN_WAIT_YT_THEN_AP) || (ConnectionType > CONN_BT_MASTER)) {
-    ConnectionType = CONN_WAIT_YT_THEN_AP; //this should probably be CONN_ACCESS_POINT 
-  }
-  Settings.end();
-
-  log_i("Device ID = %s", GUIDStr.c_str());
-    
-  log_i("Battery setup");
-  BatterySetup ();
-  log_i("Turning battery on");
-  digitalWrite (POWER_ON_OUTPUT, HIGH); //keep the power on for the moment
-  
-  delay (500); //wait 500msec to see if button still pressed
-    
-  if (digitalRead (POWER_BTN) != LOW){ //if power button released then go back to sleep. Power button may just have been knocked.
-    if (digitalRead (EXT_POWER_INPUT) == HIGH){
-        ExternalPoweredOn = true; // externally powered, so keep powered in the background
-        log_i("Externally powered");
-    }
-    else {
-      log_i("Power button not pressed. Going to sleep");
-      GoToSleep ();
-      return;
+// Reads the radar serial stream and pushes parsed targets into ld2450's per-target circular history buffer.
+void LD2450ReadTask(void * parameter) {
+  while (!OTAUpdating && !ExternalPoweredOn && !PoweringDown) {
+    vTaskDelay(pdMS_TO_TICKS(1));
+    // READ FUNCTION MUST BE CALLED IN LOOP TO READ THE INCOMMING DATA STREAM
+    // RETURNS -1 or -2 as error flag and 0 to getSensorSupportedTargetCount() if valid targets found
+    ld2450.read();
+    if (ld2450.hasBufferOverflowed())
+    {
+      log_fxl("******LD2450 UART buffer overflowed! (%u total)", ld2450.getBufferOverflowCount());
     }
   }
+  log_fxl("LD2450 Read Task stopped!");
+  vTaskDelete (NULL);
+}
 
-  if (!ExternalPoweredOn) { //user has turned on the unit
-    log_i("All systems go ...");
-    //All systems go ...
-    
-    log_i("Sending activity LED pin high"); 
-    digitalWrite(ACTIVITY_PIN, HIGH);
+uint32_t targetHistorySeqConsumed [NUM_TARGETS];
 
-    log_i("Buzzer setup");
-    BuzzSetup ();
-    BuzzOn (BUZZ_POWER_ON, 1, 0, true);
-  
-    SetupMode = false;
-    SafeMode = false;
-    
-    //Check is user still holding button after another TIME_BETWEEN_MODES seconds ... if so, go into setup mode
-    delay (QUARTER_TIME_BETWEEN_MODES);
-    BuzzOff ();
-    if (digitalRead (POWER_BTN) == LOW){ 
-      delay (QUARTER_TIME_BETWEEN_MODES);
-    }
-    if (digitalRead (POWER_BTN) == LOW){ 
-      delay (QUARTER_TIME_BETWEEN_MODES);
-    }
-    if (digitalRead (POWER_BTN) == LOW){ 
-      delay (QUARTER_TIME_BETWEEN_MODES);
-    }
-    if (digitalRead (POWER_BTN) == LOW){ 
-      BuzzOn (BUZZ_POWER_ON, 1, 0, true);
-      log_i("Going into setup mode");
-      SetupMode = true;
-      CurrentConnectionType = CONN_ACCESS_POINT;
-      digitalWrite(ACTIVITY_PIN, LOW);
-      digitalWrite(COMMS_PIN, HIGH);
-    }
-    
-    delay (QUARTER_TIME_BETWEEN_MODES);
-    BuzzOff ();
-    //Check is user still holding button after another TIME_BETWEEN_MODES seconds ... if so, go into safe mode
-    if (digitalRead (POWER_BTN) == LOW){ 
-      delay (QUARTER_TIME_BETWEEN_MODES);
-    }
-    if (digitalRead (POWER_BTN) == LOW){ 
-      delay (QUARTER_TIME_BETWEEN_MODES);
-    }
-    if (digitalRead (POWER_BTN) == LOW){ 
-      delay (QUARTER_TIME_BETWEEN_MODES);
-    }
-    if (digitalRead (POWER_BTN) == LOW){ 
-      BuzzOn (BUZZ_POWER_ON, 1, 0, true);
-      log_i("Going into safe mode");
-      SafeMode = true;
-      digitalWrite(ACTIVITY_PIN, HIGH);
-    }
-    
-    UserPoweredOn = true;
-    //ProcessNum = 0;  
-  
-    if (!SafeMode) {
-    }
-    // log_i("Command setup");
-    // CommandsSetup ();
-    // log_i("Wifi setup");
-    // WifiSetup ();
+// Consumes newly-arrived entries from ld2450's circular history buffer (oldest-first) and runs the
+// movement state machine (start-of-movement -> stop-of-movement) against them, logging via log_fxl().
+void LD2450ProcessTask(void * parameter) {
+  while (!OTAUpdating && !ExternalPoweredOn && !PoweringDown) {
+    vTaskDelay(pdMS_TO_TICKS(1));
 
-    if (!SafeMode) {
-      // log_i("BT Master setup");
-      // SetupBTMaster (false);
-      // log_i("BT Client setup");
-      // SetupBTClient ();
-      log_i("Starting Tasks");
-      StartNormalTasks();
+    for (int i = 0; i < NUM_TARGETS; i++)
+    {
+      const uint32_t currentSeq = ld2450.getTargetHistorySequence(i);
+      uint32_t newEntries = currentSeq - targetHistorySeqConsumed[i];
+      if (newEntries == 0)
+      {
+        continue;
+      }
+      // If the process task fell behind by more than the buffer can hold, the oldest unread entries were overwritten
+      if (newEntries > LD2450_TARGET_HISTORY_SIZE)
+      {
+        newEntries = LD2450_TARGET_HISTORY_SIZE;
+      }
+      targetHistorySeqConsumed[i] = currentSeq;
+
+      // history_index 0 is most recent, so walk from oldest (newEntries - 1) down to 0
+      for (int historyIndex = newEntries - 1; historyIndex >= 0; historyIndex--)
+      {
+        const LD2450::RadarTarget result_target = ld2450.getTargetHistory(i, historyIndex);
+        const unsigned long result_time = ld2450.getTargetHistoryTime(i, historyIndex);
+
+        //check if target has finished moving
+        if (targetMoving[i] && ((abs(result_target.speed) == 0) || abs(result_target.distance) > maxTargetDistance)) {
+          targetArray [targetIdx[i]][i] = result_target;
+          targetArrayTimes [targetIdx[i]][i] = result_time;
+          //report speed details
+          log_fxl("Target Detected %d in %d steps", i, targetIdx[i] + 1);
+          for (int j = 0; j <= targetIdx[i]; j++) {
+            log_fxl("%d %dms X=%dmm, Y=%dmm, S=%dcm/s, D=%dmm, R=%dmm",
+              targetArray[j][i].sequence,
+              targetArray[j][i].timestamp,
+              targetArray[j][i].x,
+              targetArray[j][i].y,
+              targetArray[j][i].speed,
+              targetArray[j][i].distance,
+              targetArray[j][i].resolution
+              );
+          }
+          targetMoving[i] = 0;
+          targetIdx[i] = 0;
+        }
+        else if (targetMoving[i]) {
+          if ((result_time - targetMoving[i] > noActivityTimeout)
+            || (abs(result_target.speed) == 0)){
+            targetIdx[i] = 0;
+            targetMoving[i] = 0;
+          }
+          else {
+            targetArray [targetIdx[i]][i] = result_target;
+            targetArrayTimes [targetIdx[i]][i] = result_time;
+            targetIdx[i] = targetIdx[i] + 1;
+          }
+        }
+        //has target started moving
+        else if (!targetMoving[i] && (abs(result_target.speed) > minTargetSpeed) && abs(result_target.distance) <= maxTargetDistance) {
+          targetArray [targetIdx[i]][i] = result_target;
+          targetMoving[i] = result_time;
+          targetArrayTimes [targetIdx[i]][i] = targetMoving[i];
+          targetIdx[i] = targetIdx[i] + 1;
+        }
+      }
     }
-    else {
-      StartSafeModeTasks();
-    }
-  } 
-  else {
-    StartExternalPoweredOnTasks();//StartBatteryTask();    
   }
-
-  digitalWrite (EXT_POWER_PIN, LOW); //initialise the ext power led off
+  log_fxl("LD2450 Process Task stopped!");
+  vTaskDelete (NULL);
 }
 
 
-
-void PowerButtonLoop () {
-  unsigned long Now = millis();
-  int PinVal = digitalRead (POWER_BTN);
-  if (PinVal == LOW){
-    if (LastPwrBtnPress == 0) {
-      LastPwrBtnPress = Now;
-    }
-    else if ((Now - LastPwrBtnPress > 500) && ExternalPoweredOn){ //externally power on and now user is turning the unit on
-      PwrButtonPressTime = 0;
-      log_i("Was externally powered and now user switching on"); 
-      ExternalPoweredOn = false;
-      RestartModule (false);
-    }
-    else if (Now - LastPwrBtnPress > 2500){ //must hold for 2.5 seconds to turn off
-      if (!PoweringDown) {
-        PoweringDown = true;
-        CommsPin = LOW;
-        BuzzOn (BUZZ_POWER_OFF, 1, 0, true);
-        //delay(1000);
-        //BuzzOff ();
-        log_i("Powering down"); 
-        GoToSleep ();
-      }
-    }
-
-    PwrButtonPressTime = Now - LastPwrBtnPress; 
-  }
-  
-  else {
-    LastPwrBtnPress = 0;
-    if (PwrButtonPressTime > 0) {      
-      //this is only used when wifi is in wait for YT mode and you want to rescan for it
-      if ((PwrButtonPressTime > 50) && (PwrButtonPressTime < 500) && UserPoweredOn){ //unit on and now user wants to start/stop scan for YT device/network
-        //log_i("Unit on, rescanning for YT network/device");
-        StartStopScanForYT ();
-      }
-      
-      PwrButtonPressTime = 0;
-    }
-  }
+void StartLD2450Task (){
+  xTaskCreate(
+                  LD2450ReadTask,      /* Task function. */
+                  "LD2450ReadTask",    /* String with name of task. */
+                  10000,            /* Stack size in bytes. */
+                  NULL,             /* Parameter passed as input of the task */
+                  HIGHEST_PRI,               /* Priority of the task. */
+                  NULL           /* Task handle. */
+                  );
+  xTaskCreate(
+                  LD2450ProcessTask,   /* Task function. */
+                  "LD2450ProcessTask", /* String with name of task. */
+                  10000,            /* Stack size in bytes. */
+                  NULL,             /* Parameter passed as input of the task */
+                  HIGHEST_PRI,               /* Priority of the task. */
+                  NULL           /* Task handle. */
+                  );
 }
-
-
-
-void CheckForExternalPower () {
-  unsigned long Now = millis();
-  if (LastExtPowerCheck == 0) {
-    LastExtPowerCheck = Now;
-  }
-  else if (Now - LastExtPowerCheck > 500) { //check every 500ms
-    LastExtPowerCheck = Now;
-    if ((!ExtPowerConnected) && (digitalRead (EXT_POWER_INPUT) == HIGH)){//check if external power connected and show LED if it is
-      digitalWrite (EXT_POWER_PIN, HIGH);
-      digitalWrite (POWER_ON_OUTPUT, HIGH); //make sure power stays on
-      ExtPowerConnected = true;
-      log_i("Detected that external power has been connected"); 
-    }
-    else if ((ExtPowerConnected) && (digitalRead (EXT_POWER_INPUT) == LOW)) {
-      digitalWrite (EXT_POWER_PIN, LOW);
-      ExtPowerConnected = false;
-      log_i("Detected that external power has been disconnected"); 
-      if (ExternalPoweredOn) {
-        log_i("Not user powered on, so turn off"); 
-        GoToSleep (); //if just siting on the charger and charger disconnected then power down
-      }
-    }  
-  }
-}
-
 
 
 void ActivityLEDTask(void * parameter) {  
@@ -365,9 +252,10 @@ void ActivityLEDTask(void * parameter) {
     // }
   }
   digitalWrite(ACTIVITY_PIN, LOW);
-  log_i("Activity LED Task stopped!");
+  log_fxl("Activity LED Task stopped!");
   vTaskDelete (NULL);
 }
+
 
 void StartActivityLEDTask (){
   xTaskCreate(
@@ -380,6 +268,261 @@ void StartActivityLEDTask (){
                   );            
 }
 
+
+
+void StartNormalTasks (){
+  StartActivityLEDTask ();
+  StartBuzzTask ();
+  //StartWifiLoopTask ();
+  StartBatteryTask();
+  //StartCommandsTask ();
+  //StartBTMasterTask ();
+  //StartBTCommsLEDTask ();
+  StartLD2450Task();
+}
+
+
+void StartSafeModeTasks (){
+  StartActivityLEDTask ();
+  StartBuzzTask ();
+  StartWifiLoopTask ();
+  StartBatteryTask();
+  StartCommandsTask ();
+}
+
+
+void StartExternalPoweredOnTasks (){
+  StartBatteryTask();
+}
+
+
+ 
+//=======================================================================
+//                    Power on setup
+//=======================================================================
+void setup() {
+  PoweringDown = false;
+  
+  pinMode(COMMS_PIN, OUTPUT);     
+  pinMode(ACTIVITY_PIN, OUTPUT);
+  pinMode(POWER_BTN, INPUT);
+  pinMode(EXT_POWER_INPUT, INPUT);
+  pinMode(EXT_POWER_PIN, OUTPUT);
+  pinMode(POWER_ON_OUTPUT, OUTPUT);
+
+  //pinMode(READ_TAG_INPUT, INPUT);
+
+  Serial.begin(115200);
+  Serial2.begin(256000, SERIAL_8N1, RXD2, TXD2);
+  while (!Serial2) {
+
+  }
+  ld2450.begin(Serial2, true);
+   
+  #ifdef MAIN_DEBUG
+  log_fxl ("**** MAIN DEBUG ON ******");
+
+  if(!ld2450.waitForSensorMessage()){
+    log_fxl("SENSOR CONNECTION SEEMS OK");
+  }
+  else{
+    log_fxl("SENSOR TEST: GOT NO VALID SENSORDATA - PLEASE CHECK CONNECTION!");
+  }
+  #endif
+
+    
+  Settings.begin("Settings", false);  
+  DataModNo = Settings.getInt(DataModNoEEAddr);//Checks to see if this is the first time we have started and if we need to do a factor reset
+  log_fxl("Data mod no = %d", DataModNo);
+  Settings.end();  
+  
+  FactoryReset (DataModNo);
+  
+  Settings.begin("Settings", false);  
+  GUIDStr = Settings.getString(GUIDEEAddr);//loads guid from flash
+  SerialNo = Settings.getString(SerialNoEEAddr);//Get serial no from flash
+  ConnectionType = Settings.getInt(ConnectionTypeEEAddr);
+  CurrentConnectionType = ConnectionType;
+  log_fxl("Connection type = %d", ConnectionType);
+  if ((ConnectionType < CONN_WAIT_YT_THEN_AP) || (ConnectionType > CONN_BT_MASTER)) {
+    ConnectionType = CONN_WAIT_YT_THEN_AP; //this should probably be CONN_ACCESS_POINT 
+  }
+  Settings.end();
+
+  log_fxl("Device ID = %s", GUIDStr.c_str());
+    
+  log_fxl("Battery setup");
+  BatterySetup ();
+  log_fxl("Turning battery on");
+  digitalWrite (POWER_ON_OUTPUT, HIGH); //keep the power on for the moment
+  
+  delay (500); //wait 500msec to see if button still pressed
+    
+  if (digitalRead (POWER_BTN) != LOW){ //if power button released then go back to sleep. Power button may just have been knocked.
+    if (digitalRead (EXT_POWER_INPUT) == HIGH){
+        ExternalPoweredOn = true; // externally powered, so keep powered in the background
+        log_fxl("Externally powered");
+    }
+    else {
+      log_fxl("Power button not pressed. Going to sleep");
+      GoToSleep ();
+      return;
+    }
+  }
+
+  if (!ExternalPoweredOn) { //user has turned on the unit
+    log_fxl("All systems go ...");
+    //All systems go ...
+    
+    log_fxl("Sending activity LED pin high"); 
+    digitalWrite(ACTIVITY_PIN, HIGH);
+
+    log_fxl("Buzzer setup");
+    BuzzSetup ();
+    BuzzOn (BUZZ_POWER_ON, 1, 0, true);
+  
+    SetupMode = false;
+    SafeMode = false;
+    
+    //Check is user still holding button after another TIME_BETWEEN_MODES seconds ... if so, go into setup mode
+    delay (QUARTER_TIME_BETWEEN_MODES);
+    BuzzOff ();
+    if (digitalRead (POWER_BTN) == LOW){ 
+      delay (QUARTER_TIME_BETWEEN_MODES);
+    }
+    if (digitalRead (POWER_BTN) == LOW){ 
+      delay (QUARTER_TIME_BETWEEN_MODES);
+    }
+    if (digitalRead (POWER_BTN) == LOW){ 
+      delay (QUARTER_TIME_BETWEEN_MODES);
+    }
+    if (digitalRead (POWER_BTN) == LOW){ 
+      BuzzOn (BUZZ_POWER_ON, 1, 0, true);
+      log_fxl("Going into setup mode");
+      SetupMode = true;
+      CurrentConnectionType = CONN_ACCESS_POINT;
+      digitalWrite(ACTIVITY_PIN, LOW);
+      digitalWrite(COMMS_PIN, HIGH);
+    }
+    
+    delay (QUARTER_TIME_BETWEEN_MODES);
+    BuzzOff ();
+    //Check is user still holding button after another TIME_BETWEEN_MODES seconds ... if so, go into safe mode
+    if (digitalRead (POWER_BTN) == LOW){ 
+      delay (QUARTER_TIME_BETWEEN_MODES);
+    }
+    if (digitalRead (POWER_BTN) == LOW){ 
+      delay (QUARTER_TIME_BETWEEN_MODES);
+    }
+    if (digitalRead (POWER_BTN) == LOW){ 
+      delay (QUARTER_TIME_BETWEEN_MODES);
+    }
+    if (digitalRead (POWER_BTN) == LOW){ 
+      BuzzOn (BUZZ_POWER_ON, 1, 0, true);
+      log_fxl("Going into safe mode");
+      SafeMode = true;
+      digitalWrite(ACTIVITY_PIN, HIGH);
+    }
+    
+    UserPoweredOn = true;
+    //ProcessNum = 0;  
+  
+    if (!SafeMode) {
+    }
+    // log_fxl("Command setup");
+    // CommandsSetup ();
+    // log_fxl("Wifi setup");
+    // WifiSetup ();
+
+    if (!SafeMode) {
+      // log_fxl("BT Master setup");
+      // SetupBTMaster (false);
+      // log_fxl("BT Client setup");
+      // SetupBTClient ();
+      log_fxl("Starting Tasks");
+      StartNormalTasks();
+    }
+    else {
+      StartSafeModeTasks();
+    }
+  } 
+  else {
+    StartExternalPoweredOnTasks();//StartBatteryTask();    
+  }
+
+  digitalWrite (EXT_POWER_PIN, LOW); //initialise the ext power led off
+}
+
+
+
+void PowerButtonLoop () {
+  unsigned long Now = millis();
+  int PinVal = digitalRead (POWER_BTN);
+  if (PinVal == LOW){
+    if (LastPwrBtnPress == 0) {
+      LastPwrBtnPress = Now;
+    }
+    else if ((Now - LastPwrBtnPress > 500) && ExternalPoweredOn){ //externally power on and now user is turning the unit on
+      PwrButtonPressTime = 0;
+      log_fxl("Was externally powered and now user switching on"); 
+      ExternalPoweredOn = false;
+      RestartModule (false);
+    }
+    else if (Now - LastPwrBtnPress > 2500){ //must hold for 2.5 seconds to turn off
+      if (!PoweringDown) {
+        PoweringDown = true;
+        CommsPin = LOW;
+        BuzzOn (BUZZ_POWER_OFF, 1, 0, true);
+        //delay(1000);
+        //BuzzOff ();
+        log_fxl("Powering down"); 
+        GoToSleep ();
+      }
+    }
+
+    PwrButtonPressTime = Now - LastPwrBtnPress; 
+  }
+  
+  else {
+    LastPwrBtnPress = 0;
+    if (PwrButtonPressTime > 0) {      
+      //this is only used when wifi is in wait for YT mode and you want to rescan for it
+      if ((PwrButtonPressTime > 50) && (PwrButtonPressTime < 500) && UserPoweredOn){ //unit on and now user wants to start/stop scan for YT device/network
+        //log_fxl("Unit on, rescanning for YT network/device");
+        StartStopScanForYT ();
+      }
+      
+      PwrButtonPressTime = 0;
+    }
+  }
+}
+
+
+
+void CheckForExternalPower () {
+  unsigned long Now = millis();
+  if (LastExtPowerCheck == 0) {
+    LastExtPowerCheck = Now;
+  }
+  else if (Now - LastExtPowerCheck > 500) { //check every 500ms
+    LastExtPowerCheck = Now;
+    if ((!ExtPowerConnected) && (digitalRead (EXT_POWER_INPUT) == HIGH)){//check if external power connected and show LED if it is
+      digitalWrite (EXT_POWER_PIN, HIGH);
+      digitalWrite (POWER_ON_OUTPUT, HIGH); //make sure power stays on
+      ExtPowerConnected = true;
+      log_fxl("Detected that external power has been connected"); 
+    }
+    else if ((ExtPowerConnected) && (digitalRead (EXT_POWER_INPUT) == LOW)) {
+      digitalWrite (EXT_POWER_PIN, LOW);
+      ExtPowerConnected = false;
+      log_fxl("Detected that external power has been disconnected"); 
+      if (ExternalPoweredOn) {
+        log_fxl("Not user powered on, so turn off"); 
+        GoToSleep (); //if just siting on the charger and charger disconnected then power down
+      }
+    }  
+  }
+}
 
 
 
@@ -414,7 +557,7 @@ void BTCommsLEDTask(void * parameter) {
     #endif
   }
   digitalWrite(COMMS_PIN, LOW);     
-  log_i("BT LED Task stopped!");
+  log_fxl("BT LED Task stopped!");
   vTaskDelete (NULL);
 }
 
@@ -430,121 +573,6 @@ void StartBTCommsLEDTask (){
                   );            
 }
 
-
-void LD2450Task(void * parameter) {  
-  while (!OTAUpdating && !ExternalPoweredOn && !PoweringDown) {
-    vTaskDelay(pdMS_TO_TICKS(1));
-    // READ FUNCTION MUST BE CALLED IN LOOP TO READ THE INCOMMING DATA STREAM
-    // RETURNS -1 or -2 as error flag and 0 to getSensorSupportedTargetCount() if valid targets found
-    const int sensor_got_valid_targets = ld2450.read();
-    if (sensor_got_valid_targets > 0)
-    {
-      unsigned long startTime = millis();
-
-      /*
-      PRINT DEBUG DATA STREAM LIKE THIS: 
-      TARGET ID=1 X=-19mm, Y=496mm, SPEED=0cm/s, RESOLUTION=360mm, DISTANCE=496mm, VALID=1
-      TARGET ID=2 X=-1078mm, Y=1370mm, SPEED=0cm/s, RESOLUTION=360mm, DISTANCE=1743mm, VALID=1
-      TARGET ID=3 X=0mm, Y=0mm, SPEED=0cm/s, RESOLUTION=0mm, DISTANCE=0mm, VALID=0
-      */
-      //Serial.print(ld2450.getLastTargetMessage());
-
-
-      // GET THE DETECTED TARGETS
-      // TARGET RANGE CAN BE FROM 0 TO ld2450.getSensorSupportedTargetCount(), DEPENDS ON SENSOR HARDWARE. REFER TO LD2450 DATASHEET
-      for (int i = 0; i < NUM_TARGETS; i++)
-      {
-        const LD2450::RadarTarget result_target = ld2450.getTarget(i);
-
-        //check if target has finished moving
-        if (targetMoving[i] && ((abs(result_target.speed) == 0) || abs(result_target.distance) > maxTargetDistance)) {
-          targetArray [targetIdx[i]][i] = result_target;
-          targetArrayTimes [targetIdx[i]][i] = millis();
-          //report speed details
-          log_i("Target Detected %d in %d steps", i, targetIdx[i] + 1);
-          for (int j = 0; j <= targetIdx[i]; j++) {
-            log_i("%d %dms X=%dmm, Y=%dmm, S=%dcm/s, D=%dmm, R=%dmm", 
-              j,
-              targetArrayTimes[j][i] - targetMoving[i],
-              targetArray[j][i].x,
-              targetArray[j][i].y,
-              targetArray[j][i].speed,
-              targetArray[j][i].distance,
-              targetArray[j][i].resolution
-              );
-          }
-          targetMoving[i] = 0;
-          targetIdx[i] = 0;
-        }
-        else if (targetMoving[i]) {
-          if ((millis() - targetMoving[i] > noActivityTimeout) 
-            || (abs(result_target.speed) == 0)){
-            targetIdx[i] = 0;
-            targetMoving[i] = 0;
-          }
-          else {
-            targetArray [targetIdx[i]][i] = result_target;
-            targetArrayTimes [targetIdx[i]][i] = millis();
-            targetIdx[i] = targetIdx[i] + 1;
-          }
-        }
-        //has target started moving
-        else if (!targetMoving[i] && (abs(result_target.speed) > minTargetSpeed) && abs(result_target.distance) <= maxTargetDistance) {
-          targetArray [targetIdx[i]][i] = result_target;
-          targetMoving[i] = millis();
-          targetArrayTimes [targetIdx[i]][i] = targetMoving[i];
-          targetIdx[i] = targetIdx[i] + 1;
-        }
-      }
-
-      //log_i ("%dms", millis() - startTime);
-    };
-  }
-  log_i("LD2450 Task stopped!");
-  vTaskDelete (NULL);
-}
-
-
-
-
-
-void StartLD2450Task (){
-  xTaskCreate(
-                  LD2450Task,          /* Task function. */
-                  "LD2450Task",        /* String with name of task. */
-                  10000,            /* Stack size in bytes. */
-                  NULL,             /* Parameter passed as input of the task */
-                  HIGHEST_PRI,               /* Priority of the task. */
-                  NULL           /* Task handle. */
-                  );            
-}
-
-
-
-void StartNormalTasks (){
-  StartActivityLEDTask ();
-  StartBuzzTask ();
-  //StartWifiLoopTask ();
-  StartBatteryTask();
-  //StartCommandsTask ();
-  //StartBTMasterTask ();
-  //StartBTCommsLEDTask ();
-  StartLD2450Task();
-}
-
-
-void StartSafeModeTasks (){
-  StartActivityLEDTask ();
-  StartBuzzTask ();
-  StartWifiLoopTask ();
-  StartBatteryTask();
-  StartCommandsTask ();
-}
-
-
-void StartExternalPoweredOnTasks (){
-  StartBatteryTask();
-}
 
 
 

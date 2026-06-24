@@ -63,7 +63,7 @@ void ScanForScales() {
   int packetSize = udp.parsePacket();
   if (packetSize) {
     IPAddress remoteIp = udp.remoteIP();
-    log_i("Received packet of size %d from %s, port %d", packetSize, remoteIp.toString().c_str(), udp.remotePort());
+    log_fxl("Received packet of size %d from %s, port %d", packetSize, remoteIp.toString().c_str(), udp.remotePort());
 
     // read the packet into packetBufffer
     int len = udp.read(packetBuffer, 255);
@@ -71,11 +71,11 @@ void ScanForScales() {
       packetBuffer[len] = 0;
     }
     String buf = packetBuffer;
-    log_i ("Contents: %s", buf.c_str());
+    log_fxl ("Contents: %s", buf.c_str());
 
     if (buf.startsWith("FXL-YTS")) {
       DefaultScaleIP = udp.remoteIP().toString();
-      log_i ("Setting Scale IP to: %s", DefaultScaleIP.c_str());      
+      log_fxl ("Setting Scale IP to: %s", DefaultScaleIP.c_str());      
     }
   }
 }
@@ -83,7 +83,7 @@ void ScanForScales() {
 
 
 void ConnectToScaleTask(void * parameter) {  
-  // log_i("ConnectToScaleTask Started");
+  // log_fxl("ConnectToScaleTask Started");
   // while (!OTAUpdating && !PoweringDown) {
   //   vTaskDelay(pdMS_TO_TICKS(1000));
   //   unsigned long Now = millis();
@@ -93,7 +93,7 @@ void ConnectToScaleTask(void * parameter) {
 
   //     if (Now - LastScaleConnectAttempt > SCALE_CONNECT_TIMEOUT) {
   //       #ifdef WIFI_DEBUG
-  //         log_i ("Trying to connect to scale.");
+  //         log_fxl ("Trying to connect to scale.");
   //       #endif
 
   //       LastScaleConnectAttempt = Now;
@@ -108,7 +108,7 @@ void ConnectToScaleTask(void * parameter) {
   //   }
   // }
 
-  log_i("ConnectToScaleTask stopped!");
+  log_fxl("ConnectToScaleTask stopped!");
   vTaskDelete (NULL);
 }
 
@@ -130,7 +130,7 @@ void ConnectToWifiNetwork() {
   if ((CurrentConnectionType == CONN_WAIT_YT_THEN_AP) || (CurrentConnectionType == CONN_YT)) {
     String tempS = DefaultSSID;
     TempSSID = tempS;
-    log_i ("TempSSID = %s, tempS = %s", TempSSID.c_str(), tempS.c_str());
+    log_fxl ("TempSSID = %s, tempS = %s", TempSSID.c_str(), tempS.c_str());
     WifiNum = 4; //set number above the normal range to signify YardsTech network
   }
   else {
@@ -147,11 +147,11 @@ void ConnectToWifiNetwork() {
     }
   }
 
-  log_i ("TempSSID = %s", TempSSID.c_str());
+  log_fxl ("TempSSID = %s", TempSSID.c_str());
   
   if (TempSSID.length() <= 0) {
     #ifdef WIFI_DEBUG
-      log_i("Nothing defined for WiFi entry %d", WifiNum);
+      log_fxl("Nothing defined for WiFi entry %d", WifiNum);
     #endif
     ConnectToWifiNetwork(); //if not network set, go to the next
   }
@@ -163,16 +163,16 @@ void ConnectToWifiNetwork() {
     Gateway.fromString(DefaultStaticGateway);
     Subnet.fromString(DefaultStaticSubnet);
     #ifdef WIFI_DEBUG
-      log_i ("Wifi config ->");
-      log_i ("Use Static IP %d", UseStaticIP);
-      log_i ("IP %s", DefaultStaticIP.c_str());
-      log_i ("Gateway %s", DefaultStaticGateway.c_str());
-      log_i ("Subnet %s", DefaultStaticSubnet.c_str());
+      log_fxl ("Wifi config ->");
+      log_fxl ("Use Static IP %d", UseStaticIP);
+      log_fxl ("IP %s", DefaultStaticIP.c_str());
+      log_fxl ("Gateway %s", DefaultStaticGateway.c_str());
+      log_fxl ("Subnet %s", DefaultStaticSubnet.c_str());
     #endif
     if (UseStaticIP) {
       if (!WiFi.config (IP, Gateway, Subnet)) {
         #ifdef WIFI_DEBUG
-          log_i("Failed to setup wifi config");
+          log_fxl("Failed to setup wifi config");
         #endif
       }
     }
@@ -183,8 +183,8 @@ void ConnectToWifiNetwork() {
       case 4 : WiFi.begin(DefaultSSID.c_str(), DefaultPassword.c_str()); break;
     }
     #ifdef WIFI_DEBUG
-      log_i ("Network defined for WiFi entry %d", WifiNum);
-      log_i ("Connecting to %s", TempSSID.c_str());
+      log_fxl ("Network defined for WiFi entry %d", WifiNum);
+      log_fxl ("Connecting to %s", TempSSID.c_str());
     #endif
   }
 }
@@ -194,8 +194,8 @@ void ConnectToWifiNetwork() {
 
 void WifiSetup() {
   #ifdef WIFI_DEBUG
-    log_i ("**** WIFI DEBUG ON ******");
-    log_i ("Starting WIFI setup");
+    log_fxl ("**** WIFI DEBUG ON ******");
+    log_fxl ("Starting WIFI setup");
   #endif
   LastWifiConnectAttempt = millis();
   LastScaleConnectAttempt = LastWifiConnectAttempt; 
@@ -256,15 +256,15 @@ void WifiSetup() {
       }
 
       #ifdef WIFI_DEBUG
-        log_i ("Setting up access point as follows ...");
-        log_i ("IP address: %s", TempIP.toString().c_str());
+        log_fxl ("Setting up access point as follows ...");
+        log_fxl ("IP address: %s", TempIP.toString().c_str());
       #endif
       WiFi.softAPConfig(TempIP, TempIP, DefSubnet);
 
       IPAddress IP = WiFi.softAPIP();
       #ifdef WIFI_DEBUG
-        log_i ("AP IP address: %s", IP.toString().c_str());
-        log_i ("Configured as AP %s", WifiName.c_str());
+        log_fxl ("AP IP address: %s", IP.toString().c_str());
+        log_fxl ("Configured as AP %s", WifiName.c_str());
       #endif
     }
     else if ((CurrentConnectionType >= CONN_WAIT_YT_THEN_AP) && (CurrentConnectionType <= CONN_EXT_NETWORK)) {
@@ -293,7 +293,7 @@ void CheckForNewConnections (unsigned long Now){
         clients[i] = new WiFiClient(newClient);//should this be "new" ... will have to check?
         MissedPings[i] = Now;
         #ifdef WIFI_DEBUG
-          log_i ("Client id = %d", i);
+          log_fxl ("Client id = %d", i);
         #endif
         break;
       }
@@ -312,15 +312,15 @@ void PingConnections (unsigned long Now){
     udp.printf (Name);//.c_str());
     udp.endPacket ();
     #ifdef WIFI_DEBUG
-      log_i ("UDP broadcast sent");
+      log_fxl ("UDP broadcast sent");
     #endif
 
     //now check that all clients are still connected
     for (int i=0 ; i<=MAX_CLIENTS ; i++) {
       // if (i == MAX_CLIENTS) {
-      //   log_i ("Max client. Now = %lu, missing = %lu, diff = %d", Now, MissedPings[i], Now-MissedPings[i]);
+      //   log_fxl ("Max client. Now = %lu, missing = %lu, diff = %d", Now, MissedPings[i], Now-MissedPings[i]);
       //   if (NULL == clients[i]) {
-      //     log_i ("Scale Client is null");
+      //     log_fxl ("Scale Client is null");
       //   }
       // }
       if (NULL != clients[i]) {
@@ -328,10 +328,10 @@ void PingConnections (unsigned long Now){
         if ((Now - MissedPings[i] > MAX_MISSED_PING_TIME) || (!(clients[i]->connected()))) {
           #ifdef WIFI_DEBUG
             if (!(clients[i]->connected())) {
-              log_i ("Client %d remotely disconnected", i);
+              log_fxl ("Client %d remotely disconnected", i);
             }
             else {
-              log_i ("Client %d missed to many pings and is being disconnected", i);
+              log_fxl ("Client %d missed to many pings and is being disconnected", i);
             }
           #endif
           clients[i]->flush();
@@ -348,7 +348,7 @@ void PingConnections (unsigned long Now){
     for (int i=0 ; i < MAX_CLIENTS ; i++) {
       if (NULL != clients[i]) {
         if ((Now - MissedPings[i] > PING_TIME) || (!(clients[i]->connected()))) {
-          log_i("Sending ping to client : %d", i);
+          log_fxl("Sending ping to client : %d", i);
           clients[i]->println (PING);
         }
       }
@@ -365,7 +365,7 @@ void CheckForData (unsigned long Now, int ClientNo) {
     //send a command to this client if there is one in the queue
     if (GetWifiResponse(ClientNo).length() > 0){
       #ifdef WIFI_DEBUG
-        log_i("Sending to client : %d : %s", ClientNo, GetWifiResponse(ClientNo).c_str());
+        log_fxl("Sending to client : %d : %s", ClientNo, GetWifiResponse(ClientNo).c_str());
       #endif
       clients[ClientNo]->println (GetWifiResponse(ClientNo));
       SetWifiResponse(ClientNo, "");
@@ -373,7 +373,7 @@ void CheckForData (unsigned long Now, int ClientNo) {
     
     else if (GetWifiAllClientResponse(ClientNo).length() > 0){
       #ifdef WIFI_DEBUG
-        log_i("Sending to all clients : %d : %s", ClientNo, GetWifiAllClientResponse(ClientNo).c_str());
+        log_fxl("Sending to all clients : %d : %s", ClientNo, GetWifiAllClientResponse(ClientNo).c_str());
       #endif
       clients[ClientNo]->println (GetWifiAllClientResponse(ClientNo));
       SetWifiAllClientResponse(ClientNo, "");
@@ -384,7 +384,7 @@ void CheckForData (unsigned long Now, int ClientNo) {
       // Read the data 
       char newChar = clients[ClientNo]->read();
       #ifdef WIFI_DEBUG 
-        log_i ("New Char: %c", newChar);
+        log_fxl ("New Char: %c", newChar);
         //Serial.println(newChar); 
       #endif
 
@@ -392,23 +392,23 @@ void CheckForData (unsigned long Now, int ClientNo) {
       // (Using the test your code uses)
       if (newChar == '\r') {
         #ifdef WIFI_DEBUG 
-          log_i ("Recieved data : %s", inputs[ClientNo]); 
+          log_fxl ("Recieved data : %s", inputs[ClientNo]); 
         #endif
         if (strcmp (inputs[ClientNo], PING) == 0) {
           #ifdef WIFI_DEBUG 
-            log_i ("Recieved Ping"); 
+            log_fxl ("Recieved Ping"); 
           #endif
           MissedPings[ClientNo] = Now; 
           if (ClientNo == SCALE_CLIENT_IDX) { // we need to send back a ping if this is from a yt scale
             #ifdef WIFI_DEBUG 
-              log_i ("Responding to ping"); 
+              log_fxl ("Responding to ping"); 
             #endif
             clients[ClientNo]->println ("[!]");
           }
         }
         else {
           #ifdef WIFI_DEBUG 
-            //log_i ("Other data recieved"); 
+            //log_fxl ("Other data recieved"); 
           #endif
           MissedPings[ClientNo] = Now; //This has been removed because Agriwebb are expecting pings regardless, fuck agriwebb
           SetWifiCommand (ClientNo, inputs[ClientNo]);
@@ -447,7 +447,7 @@ void StartStopScanForYT (){
     RestartingWifi = true;
     while (RestartingWifi) delay (10);
     #ifdef WIFI_DEBUG
-      log_i ("Stopping the scan for YardsTech Wifi ...");
+      log_fxl ("Stopping the scan for YardsTech Wifi ...");
     #endif
     //YTWaitTimeExceeded = true;
     CurrentConnectionType = CONN_ACCESS_POINT;
@@ -460,7 +460,7 @@ void StartStopScanForYT (){
     RestartingWifi = true;
     while (RestartingWifi) delay (10);
     #ifdef WIFI_DEBUG
-      log_i ("About to start a rescan for YardsTech Wifi ...");
+      log_fxl ("About to start a rescan for YardsTech Wifi ...");
     #endif
     YTWaitTimeExceeded = false;
     CurrentConnectionType = CONN_WAIT_YT_THEN_AP;
@@ -503,7 +503,7 @@ void WifiLoop () {
       if (Now - LastWifiConnectAttempt > WIFI_CONNECT_TIMEOUT) {
         if ((CurrentConnectionType == CONN_WAIT_YT_THEN_AP) && (Now - LastYTWaitTime > YT_WAIT_TIMEOUT)) {
           #ifdef WIFI_DEBUG
-            log_i ("YT network wait time exceeded. Going back to wifi setup. WifiStatus = %d", WifiStatus);
+            log_fxl ("YT network wait time exceeded. Going back to wifi setup. WifiStatus = %d", WifiStatus);
           #endif
           YTWaitTimeExceeded = true;
           WifiSetup();
@@ -522,8 +522,8 @@ void WifiLoop () {
       BuzzOn (BUZZ_WIFI_CONNECT, 1, QUIET_WIFI_CONNECT, true);
       
       #ifdef WIFI_DEBUG
-        log_i ("WiFi connected");
-        log_i ("IP address: %s", WiFi.localIP().toString().c_str());
+        log_fxl ("WiFi connected");
+        log_fxl ("IP address: %s", WiFi.localIP().toString().c_str());
       #endif
       
       WiFi.macAddress().toCharArray (MAC, 18);
@@ -531,7 +531,7 @@ void WifiLoop () {
       //Serial.println(MAC);
       
       if (strcmp (GUIDStr.c_str(), MAC) != 0) { //guid hasn't been set yet
-        log_i ("Blank or invalid device ID. A new one getting saved.");
+        log_fxl ("Blank or invalid device ID. A new one getting saved.");
         GUIDStr = String (MAC);
         Settings.begin("Settings", false);
         Settings.putString(GUIDEEAddr, GUIDStr);
@@ -548,7 +548,7 @@ void WifiLoop () {
     else if ((CurrentConnectionType == CONN_WAIT_YT_THEN_AP) && (!YTWaitTimeExceeded) && (WifiStatus != WL_CONNECTED) ) {
       if (Now - LastYTWaitTime > YT_WAIT_TIMEOUT) {
         #ifdef WIFI_DEBUG
-          log_i ("YT wait time exceeded. Going back to wifi setup.");
+          log_fxl ("YT wait time exceeded. Going back to wifi setup.");
         #endif
         YTWaitTimeExceeded = true;
         BuzzOn (BUZZ_WIFI_CONNECT, 1, QUIET_WIFI_CONNECT, true);
@@ -589,7 +589,7 @@ void WifiLoop () {
       if (LastScaleConnectStatus) { //was this connected before, we must have disconncted
         BuzzOn (BUZZ_WIFI_CONNECT, 3, QUIET_WIFI_CONNECT, true); //we have disconnected
         #ifdef WIFI_DEBUG
-          log_i ("Disconnected from Scale");
+          log_fxl ("Disconnected from Scale");
         #endif
         LastScaleConnectAttempt = 0; // this will force a reconnect on the next if statement
       }
@@ -599,7 +599,7 @@ void WifiLoop () {
 
       // if (Now - LastScaleConnectAttempt > SCALE_CONNECT_TIMEOUT) {
       //   #ifdef WIFI_DEBUG
-      //     log_i ("Trying to connect to scale.");
+      //     log_fxl ("Trying to connect to scale.");
       //   #endif
 
       //   LastScaleConnectAttempt = Now;
@@ -612,7 +612,7 @@ void WifiLoop () {
       if (LastScaleConnectStatus) {
         BuzzOn (BUZZ_WIFI_CONNECT, 2, QUIET_WIFI_CONNECT, true);
         #ifdef WIFI_DEBUG
-          log_i ("Connected to Scale");
+          log_fxl ("Connected to Scale");
         #endif
         clients[SCALE_CLIENT_IDX] = &ScaleClient;
         MissedPings[SCALE_CLIENT_IDX] = Now;
@@ -628,7 +628,7 @@ void WifiLoop () {
 
 
 void WifiLoopTask (void * parameter) {
-  log_i("WifiTask Started");
+  log_fxl("WifiTask Started");
   while (!OTAUpdating && !ExternalPoweredOn && !PoweringDown && !RestartingWifi) {
     vTaskDelay(1);
 
@@ -637,7 +637,7 @@ void WifiLoopTask (void * parameter) {
 
   RestartingWifi = false;
 
-  log_i("WifiTask stopped!");
+  log_fxl("WifiTask stopped!");
   vTaskDelete (NULL);
 }
 

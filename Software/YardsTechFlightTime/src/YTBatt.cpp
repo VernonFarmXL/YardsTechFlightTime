@@ -29,7 +29,7 @@ void ResetBatteryVoltage (void) {
       Settings.begin("Settings", false);
       Settings.putFloat(BattVoltOffsetEEAddr, 0);  
       Settings.end();
-      log_i("Reset battery voltage offset to 0");
+      log_fxl("Reset battery voltage offset to 0");
     }
     //BattValIdx = 0;
     // for (int i = 0; i < NO_OF_BATT_VALS; i++) {
@@ -40,7 +40,7 @@ void ResetBatteryVoltage (void) {
 
 void BatterySetup (void) {
   #ifdef BATT_DEBUG
-  log_i ("**** BATT DEBUG ON ******");
+  log_fxl ("**** BATT DEBUG ON ******");
   #endif
 
   pinMode(BATT_VOLTS, INPUT); 
@@ -49,14 +49,14 @@ void BatterySetup (void) {
   Settings.begin("Settings", false);
   BattVoltOffset = Settings.getFloat(BattVoltOffsetEEAddr);
   Settings.end();
-  log_i("Batt Voltage Offset = %f", BattVoltOffset);
+  log_fxl("Batt Voltage Offset = %f", BattVoltOffset);
   BattVals.setAlphaValue (0.75);
   ResetBatteryVoltage (); //clear the current battery voltage settings
 }
 
 
 void BatteryTask(void * parameter) {  
-  log_i ("Starting battery task");
+  log_fxl ("Starting battery task");
   while (!OTAUpdating && !PoweringDown) {
     vTaskDelay(pdMS_TO_TICKS(100));
     int X = analogRead (BATT_VOLTS);
@@ -67,10 +67,10 @@ void BatteryTask(void * parameter) {
     
     BattPercent = (int)(((BattVolts - ZERO_BATT_VOLTS) / BATT_VOLT_RANGE) * 100);
     #ifdef BATT_DEBUG
-      log_i("Batt ADC = %f", BattADC);
-      log_i("Batt Percent = %d", BattPercent);
-      log_i("Batt Voltage = %f", BattBeforeOffset);
-      log_i("Batt Voltage Offset = %f", BattVolts);
+      log_fxl("Batt ADC = %f", BattADC);
+      log_fxl("Batt Percent = %d", BattPercent);
+      log_fxl("Batt Voltage = %f", BattBeforeOffset);
+      log_fxl("Batt Voltage Offset = %f", BattVolts);
     #endif
 
     if (BattPercent > 100) {
@@ -89,7 +89,7 @@ void BatteryTask(void * parameter) {
   }
   
   digitalWrite (BATT_CHARGED_PIN, LOW);
-  log_i("Battery Task stopped!");
+  log_fxl("Battery Task stopped!");
   vTaskDelete (NULL);
 }
 

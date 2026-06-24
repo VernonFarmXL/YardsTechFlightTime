@@ -14,7 +14,7 @@
 
 void SetupBTClient() {
   #ifdef BT_DEBUG
-  log_i ("**** BT DEBUG ON - CLIENT ******");
+  log_fxl ("**** BT DEBUG ON - CLIENT ******");
   #endif
   Settings.begin("Settings", false);  
   //all settings are initialised in the BTMaster setup, so it must run first
@@ -25,7 +25,7 @@ void SetupBTClient() {
     LastBTClientConnected = false;
     
     #ifdef BT_DEBUG 
-      log_i ("In Client. Connection Type = %d", CurrentConnectionType); 
+      log_fxl ("In Client. Connection Type = %d", CurrentConnectionType); 
     #endif
     if (CurrentConnectionType == CONN_BT_CLIENT) {
       if (BtSSPModeEnabled) {
@@ -33,7 +33,7 @@ void SetupBTClient() {
       }
       
       #ifdef BT_DEBUG 
-        log_i("Setting name = %s", BTName.c_str()); 
+        log_fxl("Setting name = %s", BTName.c_str()); 
       #endif
       
       SerialBT.begin(BTName, false); //Bluetooth device name
@@ -64,7 +64,7 @@ void BTClientLoop() {
     BTClientConnected = SerialBT.hasClient();
     if (BTClientConnected != LastBTClientConnected) {
       #ifdef BT_DEBUG 
-        log_i ("BT Client connected changed = %d", BTClientConnected); 
+        log_fxl ("BT Client connected changed = %d", BTClientConnected); 
       #endif
       if (BTClientConnected) {
         BuzzOn (BUZZ_BT_CONNECT, 1, QUIET_BT_CONNECT, true);
@@ -80,7 +80,7 @@ void BTClientLoop() {
     if (CurrentConnectionType == CONN_BT_CLIENT) {
       if (GetWifiResponse(BT_CLIENT_IDX).length() > 0){ //check if there is a command to send
         #ifdef BT_DEBUG
-          log_i ("Sending data 1 : %s", GetWifiResponse(BT_CLIENT_IDX).c_str());
+          log_fxl ("Sending data 1 : %s", GetWifiResponse(BT_CLIENT_IDX).c_str());
         #endif
         //SerialBT.write (WifiResponses[BT_CLIENT_IDX].c_str()[0]);//, WifiResponses[BT_CLIENT_IDX].length()));
         SerialBT.println (GetWifiResponse(BT_CLIENT_IDX).c_str());
@@ -89,7 +89,7 @@ void BTClientLoop() {
       
       else if (GetWifiAllClientResponse(BT_CLIENT_IDX).length() > 0){ //nothing in the queue, check if there is a command to send
         #ifdef BT_DEBUG
-          log_i ("Sending data 3 : %s", GetWifiAllClientResponse(BT_CLIENT_IDX).c_str());
+          log_fxl ("Sending data 3 : %s", GetWifiAllClientResponse(BT_CLIENT_IDX).c_str());
         #endif
         SerialBT.println (GetWifiAllClientResponse(BT_CLIENT_IDX).c_str());
         SetWifiAllClientResponse(BT_CLIENT_IDX, "");
@@ -99,7 +99,7 @@ void BTClientLoop() {
         char C = SerialBT.read();
 
         #ifdef BT_DEBUG 
-          log_i ("%c", C); 
+          log_fxl ("%c", C); 
         #endif
   
         if ((C >= ' ') && (C <= '~')) { //must be valid char between space and ~
@@ -122,7 +122,7 @@ void BTClientLoop() {
         // If we have the end of a string
         if (C == '\r') {
           #ifdef BT_DEBUG 
-            log_i ("Recieved data : %s", BtInput); 
+            log_fxl ("Recieved data : %s", BtInput); 
           #endif
           SetWifiCommand (BT_CLIENT_IDX, BtInput);
   
@@ -137,7 +137,7 @@ void BTClientLoop() {
     }
   }
   
-//  log_i("BTClientTask stopped!");
+//  log_fxl("BTClientTask stopped!");
 //  vTaskDelete (NULL);
 
 }

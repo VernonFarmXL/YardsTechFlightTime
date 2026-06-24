@@ -18,6 +18,13 @@
 #include <Preferences.h>   // used for settings
 #include "BluetoothSerial.h"
 
+#ifdef log_fxl
+#undef log_fxl
+#endif
+#define log_fxl(format, ...) Serial.printf("[I][%s:%u] %s(): " format "\r\n", \
+    __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
+
+
 
 //this defines what hardware we are compiling for
 #define HARDWARE_VERSION 200 //initial version

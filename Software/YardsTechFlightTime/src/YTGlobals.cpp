@@ -84,7 +84,7 @@ Preferences Settings;
 
 
 void RestartModule(bool Forced){
-  log_i("Restarting module");
+  log_fxl("Restarting module");
   digitalWrite (COMMS_PIN, LOW); 
   digitalWrite (ACTIVITY_PIN, LOW); 
   digitalWrite (BATT_CHARGED_PIN, LOW); 
@@ -98,12 +98,12 @@ void GoToSleep () {
   UserPoweredOn = false;
   log_d("Preparing to sleep");
   if (digitalRead (EXT_POWER_INPUT) == HIGH){
-    log_i("Externally powered, so will stay running");
-    log_i("Resetting to turn off any services");
+    log_fxl("Externally powered, so will stay running");
+    log_fxl("Resetting to turn off any services");
     RestartModule (false);
   }
   else {
-    log_i("Shutting down power");
+    log_fxl("Shutting down power");
     digitalWrite (COMMS_PIN, LOW); 
     digitalWrite (ACTIVITY_PIN, LOW); 
     digitalWrite (BATT_CHARGED_PIN, LOW); 
@@ -122,7 +122,7 @@ void FactoryReset (int ModNo) {
   }
   
   if (ModNo <= 0){ //this means the data has never been set i.e. initial startup
-    log_i ("Setting data mod no 1");
+    log_fxl ("Setting data mod no 1");
     Settings.putString(SSIDEEAddr, "");  
     Settings.putString(PasswordEEAddr, "");  
     Settings.putString(ServerEEAddr, "");  
